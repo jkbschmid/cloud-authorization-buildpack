@@ -29,7 +29,7 @@ cp "$BUILDPACK_DIR/scripts/start_opa.sh" "$opa_start"
 chmod +x "$opa_start"
 
 
-if [ -n "${VCAP_SERVICES+x}" ] && ams_creds=$(echo "$VCAP_SERVICES"|jq -e '.["authorization"][0].credentials' ) ; then
+if [ -n "${VCAP_SERVICES+x}" ] && ams_creds=$(echo "$VCAP_SERVICES"|jq -e '.["authorization-dev"][0].credentials' ) ; then
 
 mkdir -p "$BUILD_DIR/.profile.d"
 echo "creating $BUILD_DIR/.profile.d/0000_opa_env.sh"
