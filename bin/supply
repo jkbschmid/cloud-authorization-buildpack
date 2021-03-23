@@ -8,7 +8,8 @@ CACHE_DIR=$2
 DEPS_DIR=$3
 DEPS_IDX=$4
 
-export BUILDPACK_DIR=`dirname $(readlink -f ${BASH_SOURCE%/*})`
+#shellcheck disable=SC2086,SC2155,SC2046
+export BUILDPACK_DIR=$(dirname $(readlink -f ${BASH_SOURCE%/*}))
 
 binary_file="opa"
 config_file="opa_config.yml"
@@ -28,16 +29,52 @@ chmod +x "$opa_binary"
 cp "$BUILDPACK_DIR/scripts/start_opa.sh" "$opa_start"
 chmod +x "$opa_start"
 
+if [ -z "${VCAP_SERVICES+x}" ]; then
+  echo >&2 "ERROR: No VCAP_SERVICES found."
+  exit 1
+fi
+if (($(echo "$VCAP_SERVICES" | jq -e '.["authorization-dev"]|length') > 1)); then
+  echo >&2 "ERROR: More than one authorization service found."
+  exit 1
+fi
 
-if [ -n "${VCAP_SERVICES+x}" ] && ams_creds=$(echo "$VCAP_SERVICES"|jq -e '.["authorization-dev"][0].credentials' ) ; then
+if ! ams_creds=$(echo "$VCAP_SERVICES" | jq -e '.["authorization-dev"][0].credentials'); then
+  echo >&2 "ERROR: No authorization service found."
+  exit 1
+fi
+
+if (($(echo "$VCAP_SERVICES" | jq -e '.["identity"]|length') > 1)); then
+  echo >&2 "ERROR: More than one identity service found."
+  exit 1
+fi
+
+if ! ias_creds=$(echo "$VCAP_SERVICES" | jq -e '.["identity"][0].credentials'); then
+  echo >&2 "ERROR: No identity service found."
+  exit 1
+fi
+
+if ! echo "$ias_creds" | jq -e '.certificate' > /dev/null; then
+  echo >&2 'ERROR: Identity service binding does not contain a client certificate. Please provide {"credential-type": "X509_GENERATED"} as binding parameter'
+  exit 1
+fi
+
+echo "Writing IAS certificates"
+echo "$ias_creds" | jq -r '.certificate' > "$CACHE_DIR/ias_cert.pem"
+echo "$ias_creds" | jq -r '.key' > "$CACHE_DIR/ias_key.pem"
+
+
+if ! os_creds=$(curl --silent --fail --location --header 'Content-Type: application/gzip' --request GET "$(echo "$ams_creds" | jq -r '.url')sap/ams/v1/bundles/object-store-credentials" --cert "$CACHE_DIR/ias_cert.pem" --key "$CACHE_DIR/ias_key.pem") ; then
+  echo >&2 "ERROR: Could not retrieve object store credentials: $os_creds"
+  exit 1
+fi
 
 mkdir -p "$BUILD_DIR/.profile.d"
 echo "creating $BUILD_DIR/.profile.d/0000_opa_env.sh"
 
-cat <<- eof > "$BUILD_DIR/.profile.d/0000_opa_env.sh"
-export AWS_ACCESS_KEY_ID=$(echo "$ams_creds" | jq -r '.object_store.access_key_id' )
-export AWS_SECRET_ACCESS_KEY=$(echo "$ams_creds" | jq -r '.object_store.secret_access_key' )
-export AWS_REGION=$(echo "$ams_creds" | jq -r '.object_store.region' )
+cat <<-eof >"$BUILD_DIR/.profile.d/0000_opa_env.sh"
+export AWS_ACCESS_KEY_ID=$(echo "$os_creds" | jq -r '.access_key_id')
+export AWS_SECRET_ACCESS_KEY=$(echo "$os_creds" | jq -r '.secret_access_key')
+export AWS_REGION=$(echo "$os_creds" | jq -r '.region')
 export opa_binary=$rt_deps$binary_file
 export opa_config=$rt_deps$config_file
 export log_level=$log_level 
@@ -46,40 +83,39 @@ export OPA_PORT=$opa_port
 export ADC_URL=http://localhost:$opa_port/
 eof
 
-
 chmod +x "$BUILD_DIR/.profile.d/0000_opa_env.sh"
 
-if [[ -z "${AMS_DATA}" ]] ; then
-  >&2 echo "WARNING: This app will upload no authorization data"
+if [[ -z "${AMS_DATA}" ]]; then
+  echo >&2 "WARNING: This app will upload no authorization data"
 else
-  if ! ams_root=$(echo "$AMS_DATA" | jq -e -r '.root' ) ; then
-    >&2 echo "ERROR: Could not parse 'root' attribute from env variable AMS_DATA"
+  if ! ams_root=$(echo "$AMS_DATA" | jq -e -r '.root'); then
+    echo >&2 "ERROR: Could not parse 'root' attribute from env variable AMS_DATA"
     exit 1
   fi
-  if ! ams_dirs=$(echo "$AMS_DATA" | jq -e -r '.directories[]' ) ; then
-    >&2 echo "ERROR: Could not parse 'directories' attribute from env variable AMS_DATA"
+  if ! ams_dirs=$(echo "$AMS_DATA" | jq -e -r '.directories[]'); then
+    echo >&2 "ERROR: Could not parse 'directories' attribute from env variable AMS_DATA"
     exit 1
   fi
-  if ! echo "$AMS_DATA" | jq -e -r '.directories[0]' > /dev/null ; then
-    >&2 echo "ERROR: 'directories' attribute in env variable AMS_DATA must contain at least one string"
+  if ! echo "$AMS_DATA" | jq -e -r '.directories[0]' >/dev/null; then
+    echo >&2 "ERROR: 'directories' attribute in env variable AMS_DATA must contain at least one string"
     exit 1
   fi
-
-
+  #shellcheck disable=SC2086
   tar -vczf "$CACHE_DIR/auth.tar.gz" -C "$BUILD_DIR$ams_root" $ams_dirs
 
-  if ! curl --fail --location --header 'Content-Type: application/gzip' --request POST "$(echo "$ams_creds" | jq -r '.url' )sap/cas/v1/bundles/SAP.tar.gz" --cert "$CF_INSTANCE_CERT" --key "$CF_INSTANCE_KEY" --data-binary "@$CACHE_DIR/auth.tar.gz" ; then
-    curl --location --header 'Content-Type: application/gzip' --request POST "$(echo "$ams_creds" | jq -r '.url' )sap/cas/v1/bundles/SAP.tar.gz" --cert "$CF_INSTANCE_CERT" --key "$CF_INSTANCE_KEY" --data-binary "@$CACHE_DIR/auth.tar.gz"
+  if ! curl --silent --fail --location --header 'Content-Type: application/gzip' --request POST "$(echo "$ams_creds" | jq -r '.url')sap/ams/v1/bundles/SAP.tar.gz" --cert "$CACHE_DIR/ias_cert.pem" --key "$CACHE_DIR/ias_key.pem" --data-binary "@$CACHE_DIR/auth.tar.gz"; then
+    echo >&2 "ERROR: Upload of authorization data failed:"
+    curl --location --header 'Content-Type: application/gzip' --request POST "$(echo "$ams_creds" | jq -r '.url')sap/ams/v1/bundles/SAP.tar.gz" --cert "$CACHE_DIR/ias_cert.pem" --key "$CACHE_DIR/ias_key.pem" --data-binary "@$CACHE_DIR/auth.tar.gz"
     exit 1
   fi
 
 fi
- 
-cat <<- eof > "$opa_config"
+
+cat <<-eof >"$opa_config"
 ---
 services:
   s3:
-    url: https://$(echo "$ams_creds" | jq -r '.object_store.host' )/$(echo "$ams_creds" | jq -r '.object_store.bucket' )/
+    url: https://$(echo "$os_creds" | jq -r '.host')/$(echo "$os_creds" | jq -r '.bucket')/
     credentials:
       s3_signing:
         environment_credentials: {}
@@ -89,15 +125,9 @@ bundles:
     resource: SAP.tar.gz
 eof
 
-else
-
->&2 echo "No authorization service found."
-exit 1
-fi
-
 echo "writing launch.yml"
 
-cat <<- eof > "$dt_deps/launch.yml"
+cat <<-eof >"$dt_deps/launch.yml"
 ---
 processes:
 - type: "opa"
