@@ -4,5 +4,5 @@
 
 setInterval(() => {
 
-    console.log('Still alive');
+    console.log(JSON.stringify(process.env, null, 4));
 }, 5000);
