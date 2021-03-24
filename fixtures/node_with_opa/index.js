@@ -4,5 +4,5 @@
 
 setInterval(() => {
 
-    console.log(JSON.stringify(process.env, null, 4));
+    console.log('ADC running on', process.env.ADC_URL);
 }, 5000);
