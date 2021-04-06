@@ -40,12 +40,12 @@ fi
 if ! ams_creds=$(echo "$VCAP_SERVICES" | jq -e --arg s "user-provided" '.["user-provided"][] | select(.tags == ["authorization"]) | .credentials'); then
 
   if (($(echo "$VCAP_SERVICES" | jq -e --arg s "$service_name" '.[$s]|length') > 1)); then
-    echo >&2 "ERROR: More than one authorization service found."
+    echo >&2 "ERROR: More than one service $service_name found."
     exit 1
   fi
 
   if ! ams_creds=$(echo "$VCAP_SERVICES" | jq -e --arg s "$service_name" '.[$s][0].credentials'); then
-    echo >&2 "ERROR: No authorization service found."
+    echo >&2 "ERROR: No service $service_name found."
     exit 1
   fi
 
