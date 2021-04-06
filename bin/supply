@@ -24,7 +24,7 @@ opa_start="$dt_deps$start_file"
 opa_port="9888"
 
 vars=$(cat "$BUILDPACK_DIR/vars.json")
-service_name="$(echo "$vars" | jq '.service_name')"
+service_name="$(echo "$vars" | jq -r '.service_name')"
 
 wget https://github.com/open-policy-agent/opa/releases/download/v0.23.2/opa_linux_amd64 -q -O "$opa_binary"
 chmod +x "$opa_binary"
