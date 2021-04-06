@@ -8,17 +8,17 @@ This app has no real functionality. It just illustrates the authorzation sidecar
 - Defines an NodeJS main process that idles just to keep the app alive
 
 To actually see something running you could connect to the app container using 
-´´´
+```sh
 cf ssh node-opa
-´´´
+```
 and query the sidecar process using curl
 
 
 ## Deployment
 Navigate to the directory fixtures/node_with_opa
 
-´´´
+```sh
 cf create-service authorization application ams-node-opa -c ams.json
 cf create-service identity application ias-node-opa -c ias.json
 cf push
-´´´
+```
