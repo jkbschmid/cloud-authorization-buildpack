@@ -37,7 +37,7 @@ if [ -z "${VCAP_SERVICES+x}" ]; then
   exit 1
 fi
 
-if ! ams_creds=$(echo "$VCAP_SERVICES" | jq --arg s "user-provided" '.["user-provided"][] | select(.tags == ["authorization"]) | .credentials'); then
+if ! ams_creds=$(echo "$VCAP_SERVICES" | jq -e --arg s "user-provided" '.["user-provided"][] | select(.tags == ["authorization"]) | .credentials'); then
 
   if (($(echo "$VCAP_SERVICES" | jq -e --arg s "$service_name" '.[$s]|length') > 1)); then
     echo >&2 "ERROR: More than one authorization service found."
@@ -51,7 +51,7 @@ if ! ams_creds=$(echo "$VCAP_SERVICES" | jq --arg s "user-provided" '.["user-pro
 
 fi
 
-if ! ias_creds=$(echo "$VCAP_SERVICES" | jq --arg s "user-provided" '.["user-provided"][] | select(.tags == ["identity"]) | .credentials'); then
+if ! ias_creds=$(echo "$VCAP_SERVICES" | jq -e --arg s "user-provided" '.["user-provided"][] | select(.tags == ["identity"]) | .credentials'); then
 
   if (($(echo "$VCAP_SERVICES" | jq -e '.["identity"]|length') > 1)); then
     echo >&2 "ERROR: More than one identity service found."
