@@ -12,6 +12,9 @@ To actually see something running you could connect to the app container using
 cf ssh node-opa
 ```
 and query the sidecar process using curl
+```sh
+curl localhost:8999
+```
 
 
 ## Deployment
