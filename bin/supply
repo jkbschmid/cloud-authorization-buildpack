@@ -23,6 +23,9 @@ log_level="debug"
 opa_start="$dt_deps$start_file"
 opa_port="9888"
 
+vars=$(cat "$BUILDPACK_DIR/vars.json")
+service_name="$(echo "$vars" | jq '.service_name')"
+
 wget https://github.com/open-policy-agent/opa/releases/download/v0.23.2/opa_linux_amd64 -q -O "$opa_binary"
 chmod +x "$opa_binary"
 
@@ -33,37 +36,45 @@ if [ -z "${VCAP_SERVICES+x}" ]; then
   echo >&2 "ERROR: No VCAP_SERVICES found."
   exit 1
 fi
-if (($(echo "$VCAP_SERVICES" | jq -e '.["authorization-dev"]|length') > 1)); then
-  echo >&2 "ERROR: More than one authorization service found."
-  exit 1
+
+if ! ams_creds=$(echo "$VCAP_SERVICES" | jq --arg s "user-provided" '.["user-provided"][] | select(.tags == ["authorization"]) | .credentials'); then
+
+  if (($(echo "$VCAP_SERVICES" | jq -e --arg s "$service_name" '.[$s]|length') > 1)); then
+    echo >&2 "ERROR: More than one authorization service found."
+    exit 1
+  fi
+
+  if ! ams_creds=$(echo "$VCAP_SERVICES" | jq -e --arg s "$service_name" '.[$s][0].credentials'); then
+    echo >&2 "ERROR: No authorization service found."
+    exit 1
+  fi
+
 fi
 
-if ! ams_creds=$(echo "$VCAP_SERVICES" | jq -e '.["authorization-dev"][0].credentials'); then
-  echo >&2 "ERROR: No authorization service found."
-  exit 1
+if ! ias_creds=$(echo "$VCAP_SERVICES" | jq --arg s "user-provided" '.["user-provided"][] | select(.tags == ["identity"]) | .credentials'); then
+
+  if (($(echo "$VCAP_SERVICES" | jq -e '.["identity"]|length') > 1)); then
+    echo >&2 "ERROR: More than one identity service found."
+    exit 1
+  fi
+
+  if ! ias_creds=$(echo "$VCAP_SERVICES" | jq -e '.["identity"][0].credentials'); then
+    echo >&2 "ERROR: No identity service found."
+    exit 1
+  fi
+
 fi
 
-if (($(echo "$VCAP_SERVICES" | jq -e '.["identity"]|length') > 1)); then
-  echo >&2 "ERROR: More than one identity service found."
-  exit 1
-fi
-
-if ! ias_creds=$(echo "$VCAP_SERVICES" | jq -e '.["identity"][0].credentials'); then
-  echo >&2 "ERROR: No identity service found."
-  exit 1
-fi
-
-if ! echo "$ias_creds" | jq -e '.certificate' > /dev/null; then
+if ! echo "$ias_creds" | jq -e '.certificate' >/dev/null; then
   echo >&2 'ERROR: Identity service binding does not contain a client certificate. Please provide {"credential-type": "X509_GENERATED"} as binding parameter'
   exit 1
 fi
 
 echo "Writing IAS certificates"
-echo "$ias_creds" | jq -r '.certificate' > "$CACHE_DIR/ias_cert.pem"
-echo "$ias_creds" | jq -r '.key' > "$CACHE_DIR/ias_key.pem"
+echo "$ias_creds" | jq -r '.certificate' >"$CACHE_DIR/ias_cert.pem"
+echo "$ias_creds" | jq -r '.key' >"$CACHE_DIR/ias_key.pem"
 
-
-if ! os_creds=$(curl --silent --fail --location --header 'Content-Type: application/gzip' --request GET "$(echo "$ams_creds" | jq -r '.url')sap/ams/v1/bundles/object-store-credentials" --cert "$CACHE_DIR/ias_cert.pem" --key "$CACHE_DIR/ias_key.pem") ; then
+if ! os_creds=$(curl --silent --fail --location --header 'Content-Type: application/gzip' --request GET "$(echo "$ams_creds" | jq -r '.url')sap/ams/v1/bundles/object-store-credentials" --cert "$CACHE_DIR/ias_cert.pem" --key "$CACHE_DIR/ias_key.pem"); then
   echo >&2 "ERROR: Could not retrieve object store credentials: $os_creds"
   exit 1
 fi
