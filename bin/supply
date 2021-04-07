@@ -53,7 +53,7 @@ else
 
 fi
 
-if echo "$VCAP_SERVICES" | jq -e '.["user-provided"]' >/dev/null && ias_creds=$(echo "$VCAP_SERVICES" | jq -e -'.["user-provided"][] | select(.tags | index("identity") > -1) | .credentials'); then
+if echo "$VCAP_SERVICES" | jq -e '.["user-provided"]' >/dev/null && ias_creds=$(echo "$VCAP_SERVICES" | jq -e '.["user-provided"][] | select(.tags | index("identity") > -1) | .credentials'); then
   echo "Detected user-provided identity service $(echo "$VCAP_SERVICES" | jq '.["user-provided"][] | select(.tags | index("identity") > -1) | .name') "
 else
   if (($(echo "$VCAP_SERVICES" | jq -e '.["identity"]|length') > 1)); then
