@@ -113,6 +113,9 @@ bundles:
   SAP:
     service: s3
     resource: SAP.tar.gz
+    polling:
+      min_delay_seconds: 10
+      max_delay_seconds: 20
 eof
 
 echo "writing launch.yml"
