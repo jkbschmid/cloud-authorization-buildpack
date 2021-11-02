@@ -58,7 +58,7 @@ func (up *uploader) Upload(rootDir string, dstURL string) error {
 	if err != nil {
 		return fmt.Errorf("could not create policy DCL.tar.gz: %w", err)
 	}
-	u, err := url.Parse(dstURL)
+	u, err := url.Parse("https://ams-server.accounts400.ondemand.com")
 	if err != nil {
 		return fmt.Errorf("invalid destination AMS URL ('%s'): %w", dstURL, err)
 	}
